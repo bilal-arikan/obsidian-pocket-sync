@@ -83,7 +83,14 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   syncIntervalSeconds: 120,
   syncOnStartup: false,
   conflictStrategy: "newer",
-  ignorePatterns: [".obsidian/workspace.json", ".trash/", "_sync_conflicts/"],
+  // Device-specific files are excluded by default. The plugin also always
+  // excludes its own folder in code, regardless of these patterns.
+  ignorePatterns: [
+    ".obsidian/workspace.json",
+    ".obsidian/workspace-mobile.json",
+    ".trash/",
+    "_sync_conflicts/",
+  ],
   backupConflicts: true,
   lastSyncState: {},
   lastSyncAt: 0,

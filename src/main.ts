@@ -86,7 +86,8 @@ export default class PocketBaseSyncPlugin extends Plugin {
         this.app.vault.adapter,
         client,
         this.settings,
-        (p) => this.onSyncProgress(p)
+        (p) => this.onSyncProgress(p),
+        this.manifest.dir // always exclude our own plugin folder
       );
       const result = await engine.sync();
       await this.saveSettings();

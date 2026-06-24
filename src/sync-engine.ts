@@ -8,7 +8,7 @@ import {
   SyncSnapshotEntry,
 } from "./types";
 import { scanVault } from "./vault-index";
-import { normalizePath } from "./utils";
+import { isIgnored, normalizePath } from "./utils";
 
 // Live progress reported during a sync pass (for the status bar / notices).
 export interface SyncProgress {
@@ -41,8 +41,21 @@ export class SyncEngine {
     private adapter: DataAdapter,
     private client: PocketBaseClient,
     private settings: PluginSettings,
-    private onProgress?: (p: SyncProgress) => void
+    private onProgress?: (p: SyncProgress) => void,
+    // Vault-relative path of this plugin's own folder; always excluded so we
+    // never sync our own data.json (credentials + device-specific sync state).
+    private selfDir?: string
   ) {}
+
+  // User ignore patterns plus the hardcoded self-folder exclusion.
+  private effectiveIgnore(): string[] {
+    const list = [...this.settings.ignorePatterns];
+    if (this.selfDir) {
+      const dir = normalizePath(this.selfDir).replace(/\/+$/, "");
+      if (dir) list.push(dir + "/");
+    }
+    return list;
+  }
 
   private report(p: SyncProgress): void {
     try {
@@ -68,11 +81,18 @@ export class SyncEngine {
       await this.client.authenticate();
     }
 
+    const ignore = this.effectiveIgnore();
+
     this.report({ phase: "scan", done: 0, total: 0, pushed: 0, pulled: 0 });
-    const local = await scanVault(this.adapter, this.settings.ignorePatterns);
+    const local = await scanVault(this.adapter, ignore);
 
     this.report({ phase: "list", done: 0, total: 0, pushed: 0, pulled: 0 });
     const remote = await this.client.listRemote();
+    // Drop any remote records under ignored paths (e.g. our own plugin folder)
+    // so they are never pulled down and overwritten locally.
+    for (const p of [...remote.keys()]) {
+      if (isIgnored(p, ignore)) remote.delete(p);
+    }
     const base = this.settings.lastSyncState;
 
     const ops = this.computeOps(local, remote, base);
