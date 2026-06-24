@@ -34,19 +34,53 @@ obsidian://brat?plugin=bilal-arikan/obsidian-pocket-sync
 
 ## Quick Start
 
-1. **Run PocketBase** (locally or on a VPS via `deploy/docker-compose.yml`) and
-   create a user account in the `users` collection.
-2. **Build & install the plugin:**
-   ```bash
-   npm install
-   npm run build
-   node scripts/deploy.mjs "/path/to/Your Vault"
-   ```
-3. **Configure** in Obsidian: set the server URL, credentials, and a shared
-   `Vault ID` (identical on every device), then run **Sync now**.
+### 1. Server (VPS, Docker)
 
-For a full VPS deployment guide (PocketBase + automatic HTTPS), see
+```bash
+git clone https://github.com/bilal-arikan/obsidian-pocket-sync.git
+cd obsidian-pocket-sync/deploy
+cp .env.example .env          # edit PB_DOMAIN, HTTPS_PORT, CF_API_TOKEN
+docker compose up -d --build  # PocketBase + Caddy(rate_limit) + fail2ban
+sudo ufw allow "$HTTPS_PORT"/tcp     # if the host uses ufw
+
+# create the admin + the account the plugin logs in with
+docker compose exec pocketbase /pb/pocketbase superuser upsert "you@example.com" "<strong-pass>"
+```
+
+Then open `https://<PB_DOMAIN>:<HTTPS_PORT>/_/` → `users` collection → **New record**
+to create the login account the plugin will use. Full guide + DNS-01 details:
 [`deploy/README.md`](deploy/README.md).
+
+> **Just testing locally?** Use `deploy/docker-compose.simple.yml` (plain HTTP on
+> port 8095, no domain/TLS needed).
+
+### 2. Plugin (each device)
+
+**Install** — via [BRAT](#quick-install) (mobile-friendly) or copy `main.js`,
+`manifest.json`, `styles.css` into `<Vault>/.obsidian/plugins/pocketbase-sync/`.
+
+**Configure** — open the plugin settings and fill in:
+
+| Setting | Value |
+|---------|-------|
+| Server URL | `https://<PB_DOMAIN>:<HTTPS_PORT>` (or `http://127.0.0.1:8095` for local) |
+| Email / Password | the `users` account you created |
+| Vault ID | any name — **identical on every device** |
+
+Click **Test connection** (should go green), then **Sync now** (🔄). The status bar
+shows live progress: `PB ⟳ 12/45 · 27% (↑8 ↓4)`.
+
+> **Switching an existing vault to a new server?** Hit **Reset sync state** in
+> settings first, otherwise the 3-way diff may treat your files as remote
+> deletions. After a reset the first sync simply pushes everything.
+
+### 3. Build from source (optional)
+
+```bash
+npm install
+npm run build
+node scripts/deploy.mjs "/path/to/Your Vault"
+```
 
 ## Installing on Other Devices (macOS, iOS, Android)
 

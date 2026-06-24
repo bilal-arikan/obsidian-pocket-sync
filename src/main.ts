@@ -1,7 +1,7 @@
 import { Notice, Plugin } from "obsidian";
 import { PocketBaseClient } from "./pocketbase-client";
 import { PocketBaseSyncSettingTab } from "./settings";
-import { SyncEngine } from "./sync-engine";
+import { SyncEngine, SyncProgress } from "./sync-engine";
 import { DEFAULT_SETTINGS, PluginSettings, SyncResult } from "./types";
 import { formatTime } from "./utils";
 
@@ -82,7 +82,12 @@ export default class PocketBaseSyncPlugin extends Plugin {
     this.updateStatus("syncing");
     try {
       const client = new PocketBaseClient(this.settings);
-      const engine = new SyncEngine(this.app.vault.adapter, client, this.settings);
+      const engine = new SyncEngine(
+        this.app.vault.adapter,
+        client,
+        this.settings,
+        (p) => this.onSyncProgress(p)
+      );
       const result = await engine.sync();
       await this.saveSettings();
       this.reportResult(result, trigger);
@@ -110,6 +115,33 @@ export default class PocketBaseSyncPlugin extends Plugin {
       if (r.errors.length) parts.push(`✗ ${r.errors.length} errors`);
       new Notice(`PocketBase Sync: ${parts.join("  ")}`);
     }
+  }
+
+  // Live status-bar updates emitted by the sync engine.
+  private onSyncProgress(p: SyncProgress): void {
+    if (!this.statusBar) return;
+    let text = "PB ⟳ syncing…";
+    let tip = "PocketBase Sync — working";
+    switch (p.phase) {
+      case "scan":
+        text = "PB ⟳ scanning vault…";
+        break;
+      case "list":
+        text = "PB ⟳ checking server…";
+        break;
+      case "apply": {
+        const pct = p.total ? Math.round((p.done / p.total) * 100) : 100;
+        text = p.total
+          ? `PB ⟳ ${p.done}/${p.total} · ${pct}% (↑${p.pushed} ↓${p.pulled})`
+          : "PB ⟳ already up to date";
+        tip = `PocketBase Sync — ${p.done}/${p.total} files · ↑${p.pushed} ↓${p.pulled}`;
+        break;
+      }
+      case "done":
+        return; // final idle/last-sync text is set by runSync afterwards
+    }
+    this.statusBar.setText(text);
+    this.statusBar.title = tip;
   }
 
   private updateStatus(state: "idle" | "syncing" | "error"): void {

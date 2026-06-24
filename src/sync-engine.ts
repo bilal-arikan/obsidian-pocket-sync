@@ -10,6 +10,15 @@ import {
 import { scanVault } from "./vault-index";
 import { normalizePath } from "./utils";
 
+// Live progress reported during a sync pass (for the status bar / notices).
+export interface SyncProgress {
+  phase: "scan" | "list" | "apply" | "done";
+  done: number;
+  total: number;
+  pushed: number;
+  pulled: number;
+}
+
 // A single resolved operation to perform during a sync pass.
 interface Op {
   path: string;
@@ -31,8 +40,17 @@ export class SyncEngine {
   constructor(
     private adapter: DataAdapter,
     private client: PocketBaseClient,
-    private settings: PluginSettings
+    private settings: PluginSettings,
+    private onProgress?: (p: SyncProgress) => void
   ) {}
+
+  private report(p: SyncProgress): void {
+    try {
+      this.onProgress?.(p);
+    } catch {
+      /* progress sink must never break a sync */
+    }
+  }
 
   async sync(): Promise<SyncResult> {
     const start = Date.now();
@@ -50,17 +68,23 @@ export class SyncEngine {
       await this.client.authenticate();
     }
 
+    this.report({ phase: "scan", done: 0, total: 0, pushed: 0, pulled: 0 });
     const local = await scanVault(this.adapter, this.settings.ignorePatterns);
+
+    this.report({ phase: "list", done: 0, total: 0, pushed: 0, pulled: 0 });
     const remote = await this.client.listRemote();
     const base = this.settings.lastSyncState;
 
     const ops = this.computeOps(local, remote, base);
+    const total = ops.length;
 
     // Fresh snapshot we build as operations succeed. Start from current
     // converged state (both sides equal) and mutate per op.
     const newSnapshot: Record<string, SyncSnapshotEntry> = {};
     this.seedConverged(local, remote, base, newSnapshot);
 
+    let done = 0;
+    this.report({ phase: "apply", done, total, pushed: 0, pulled: 0 });
     for (const op of ops) {
       try {
         await this.applyOp(op, newSnapshot, result);
@@ -70,11 +94,26 @@ export class SyncEngine {
         console.error("[pocketbase-sync]", msg, e);
         result.errors.push(msg);
       }
+      done++;
+      this.report({
+        phase: "apply",
+        done,
+        total,
+        pushed: result.pushed,
+        pulled: result.pulled,
+      });
     }
 
     this.settings.lastSyncState = newSnapshot;
     this.settings.lastSyncAt = Date.now();
     result.durationMs = Date.now() - start;
+    this.report({
+      phase: "done",
+      done,
+      total,
+      pushed: result.pushed,
+      pulled: result.pulled,
+    });
     return result;
   }
 

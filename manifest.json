@@ -1,7 +1,7 @@
 {
   "id": "pocketbase-sync",
   "name": "PocketBase Sync",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minAppVersion": "1.5.0",
   "description": "Sync your vault across devices using a self-hosted PocketBase server. Bidirectional, conflict-aware sync with file attachment support.",
   "author": "Bilal Arikan",
