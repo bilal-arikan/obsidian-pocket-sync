@@ -1,5 +1,7 @@
 # Obsidian Pocket Sync
 
+<img width="619" height="647" alt="image" src="https://github.com/user-attachments/assets/ecb5804d-cc8d-4120-87e1-6d2491836e47" />
+
 Sync your [Obsidian](https://obsidian.md) vault across devices through a
 self-hosted [PocketBase](https://pocketbase.io) server. Bidirectional,
 conflict-aware sync with full support for attachments and binary files.
