@@ -1,0 +1,52 @@
+# Reverse proxy with automatic HTTPS (DNS-01) + proxy-level rate limiting.
+{
+	# Backend API has no browser-facing HTTP; skip the port 80 redirect server
+	# so we don't need to bind/publish port 80 at all.
+	auto_https disable_redirects
+}
+
+# Listens on HTTPS_PORT (e.g. 8443) so it can coexist with another proxy on 443.
+{$PB_DOMAIN}:{$HTTPS_PORT} {
+	# Certificate via Cloudflare DNS-01 challenge — works on any port, needs no
+	# inbound 80/443. Requires CF_API_TOKEN (Zone:DNS:Edit).
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+	}
+
+	encode gzip
+
+	# JSON access log on a shared volume so fail2ban can watch it.
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		format json
+	}
+
+	# --- Layer 2: proxy-level rate limiting (mholt/caddy-ratelimit) ---
+	# Returns HTTP 429 when a client IP exceeds the budget, before the request
+	# ever reaches PocketBase.
+	rate_limit {
+		# Strict cap on login endpoints -> blunts credential brute force.
+		zone auth {
+			match {
+				path /api/collections/*/auth-with-password
+			}
+			key {remote_host}
+			events 15
+			window 1m
+		}
+		# Broad anti-flood cap across the whole API, per client IP.
+		zone api {
+			match {
+				path /api/*
+			}
+			key {remote_host}
+			events 600
+			window 1m
+		}
+	}
+
+	reverse_proxy pocketbase:8090
+}

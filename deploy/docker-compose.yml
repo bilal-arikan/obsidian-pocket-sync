@@ -1,0 +1,76 @@
+# PocketBase + Caddy (auto HTTPS + rate limiting) + fail2ban for the Obsidian
+# sync backend. Three layers of brute-force defense:
+#   1. PocketBase built-in rate limiter (baked via migration)
+#   2. Caddy proxy-level rate_limit (HTTP 429 before reaching PocketBase)
+#   3. fail2ban — bans abusive IPs at the host firewall (iptables)
+#
+#   cd deploy
+#   cp .env.example .env   # then edit PB_DOMAIN
+#   docker compose up -d --build
+#   docker compose exec pocketbase /pb/pocketbase superuser upsert "you@example.com" "<strong-pass>"
+
+services:
+  pocketbase:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PB_VERSION: ${PB_VERSION:-0.39.4}
+    image: obsidian-pocketbase-sync:latest
+    container_name: pocketbase
+    restart: unless-stopped
+    volumes:
+      - pb_data:/pb/pb_data
+    expose:
+      - "8090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    build:
+      context: ./caddy
+      dockerfile: Dockerfile
+    image: obsidian-caddy-ratelimit:latest
+    container_name: caddy
+    restart: unless-stopped
+    depends_on:
+      - pocketbase
+    ports:
+      # Single HTTPS port; certs come from DNS-01 so no 80/443 needed.
+      - "${HTTPS_PORT:-9443}:${HTTPS_PORT:-9443}"
+    environment:
+      PB_DOMAIN: ${PB_DOMAIN}
+      HTTPS_PORT: ${HTTPS_PORT:-9443}
+      CF_API_TOKEN: ${CF_API_TOKEN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+
+  fail2ban:
+    image: crazymax/fail2ban:latest
+    container_name: fail2ban
+    restart: unless-stopped
+    depends_on:
+      - caddy
+    # Host networking + NET_ADMIN let fail2ban apply bans to the host firewall.
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      TZ: ${TZ:-Europe/Istanbul}
+      F2B_LOG_LEVEL: INFO
+    volumes:
+      - ./fail2ban:/data
+      - caddy_logs:/var/log/caddy:ro
+
+volumes:
+  pb_data:
+  caddy_data:
+  caddy_config:
+  caddy_logs:

@@ -1,0 +1,4 @@
+/* PocketBase Sync — status bar styling hook (kept minimal). */
+.status-bar-item.plugin-pocketbase-sync {
+  cursor: default;
+}
